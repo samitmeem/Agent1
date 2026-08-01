@@ -1,0 +1,8 @@
+pyproject.toml
+tests/test_stt.py
+tests/test_tts.py
+voice.egg-info/PKG-INFO
+voice.egg-info/SOURCES.txt
+voice.egg-info/dependency_links.txt
+voice.egg-info/requires.txt
+voice.egg-info/top_level.txt

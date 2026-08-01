@@ -1,0 +1,29 @@
+[project]
+name = "worker"
+version = "0.1.0"
+description = "Ticket Assistant ARQ + LangGraph worker"
+requires-python = ">=3.11"
+dependencies = [
+    "arq>=0.25",
+    "langgraph>=0.0.40",
+    "langchain>=0.1",
+    "asyncpg>=0.29",
+    "redis>=5.0",
+    "pydantic>=2.6",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project.optional-dependencies]
+# Hermes tools are opt-in. The base `pip install ./worker` does NOT install
+# these. Enable with `pip install ./worker[hermes]`. When the
+# ENABLE_HERMES_TOOLS env flag is also set, the adapter discovers and wraps
+# vendored Hermes tools. See docs/hermes-integration-proposal.md.
+hermes = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["worker*"]

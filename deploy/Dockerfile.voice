@@ -1,0 +1,34 @@
+# Voice service — Faster-Whisper STT + Kokoro TTS.
+#
+# The voice package is imported by the Gateway (STT audio path + health
+# checks at GET /healthz/voice) and the Worker (TTS streaming via
+# VoiceStreamer).  It is not a standalone FastAPI service; this image
+# exists so the voice native deps (faster-whisper, kokoro, numpy) can be
+# installed in a slim image and the healthcheck exercised independently.
+FROM python:3.11-slim
+WORKDIR /app
+
+# System deps for faster-whisper (onnxruntime) and audio decoding.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg libsndfile1 \
+        && rm -rf /var/lib/apt/lists/*
+
+COPY voice/ /app/voice/
+COPY contracts/ /app/contracts/
+
+RUN pip install --no-cache-dir \
+        faster-whisper>=1.0 \
+        kokoro>=0.1 \
+        numpy>=1.26 \
+        webrtcvad>=2.0 \
+        fastapi>=0.110 \
+        "uvicorn[standard]>=0.27"
+
+# Healthcheck verifies the voice package imports and the STT/TTS
+# models can load.  In production, the Gateway's /healthz/voice endpoint
+# calls STTService.health() and TTSService.health() which exercise the
+# same load paths.
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+        CMD python -c "from voice.stt import FasterWhisperTranscriber; from voice.tts import KokoroSynthesizer; FasterWhisperTranscriber().load(); KokoroSynthesizer().load()" || exit 1
+
+CMD ["python", "-c", "import voice; print('voice service ready')"]

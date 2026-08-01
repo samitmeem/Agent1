@@ -1,0 +1,21 @@
+# Foundation runtime cache (SQLite, memory, sessions) — never commit
+.foundation/
+
+# Foundation node_modules — installed by bootstrap.sh
+.foundation/node_modules/
+.foundation/**/node_modules/
+.foundation/auto-runner/out/
+.foundation/auto-runner/.artifacts/
+.foundation/vendor/agent-platform/out/
+.foundation/vendor/agent-platform/.artifacts/
+.foundation/vendor/agent-platform/node_modules/
+.foundation/vendor/context-mode/node_modules/
+
+# Python (your app)
+.venv*/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db

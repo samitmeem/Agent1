@@ -1,0 +1,47 @@
+# Worker service — ARQ + LangGraph ticket processor.
+#
+# Built from the project root so shared packages (contracts, llm,
+# observability, voice) can be installed alongside the worker package.
+# Build context: .. (project root)
+#   docker build -f deploy/Dockerfile.worker -t ticket-worker ..
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# System deps for building native extensions (asyncpg, cryptography).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential libpq-dev \
+        && rm -rf /var/lib/apt/lists/*
+
+COPY contracts/ /app/contracts/
+COPY llm/ /app/llm/
+COPY observability/ /app/observability/
+COPY voice/ /app/voice/
+COPY worker/ /app/worker/
+
+RUN pip install --no-cache-dir --upgrade pip \
+        && pip install --no-cache-dir ./contracts ./llm ./observability \
+        && pip install --no-cache-dir ./voice \
+        && pip install --no-cache-dir ./worker
+
+# ---------------------------------------------------------------------------
+# Runtime image.
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 \
+        && rm -rf /var/lib/apt/lists/* \
+        && useradd --create-home --uid 10001 app
+
+WORKDIR /app
+
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /app /app
+
+USER app
+
+# ARQ workers don't expose an HTTP port; readiness is observed via the
+# Redis queue depth and the gateway's /healthz (which checks redis).
+CMD ["arq", "worker.entrypoint.WorkerSettings"]

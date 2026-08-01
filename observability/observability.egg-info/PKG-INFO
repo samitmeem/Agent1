@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: observability
+Version: 0.1.0
+Summary: Shared observability: tracing, metrics, structured logging, SLO tracking
+Requires-Python: >=3.11
+Requires-Dist: prometheus-client>=0.20
+Requires-Dist: opentelemetry-api>=1.24
+Requires-Dist: opentelemetry-sdk>=1.24
+Requires-Dist: structlog>=24.1

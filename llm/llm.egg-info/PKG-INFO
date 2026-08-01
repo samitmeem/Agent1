@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: llm
+Version: 0.1.0
+Summary: LiteLLM router wrapper (Qwen-first, DeepSeek fallback)
+Requires-Python: >=3.11
+Requires-Dist: litellm>=1.30
+Requires-Dist: pydantic>=2.6
+Requires-Dist: httpx>=0.27

@@ -1,0 +1,172 @@
+# Ticket Assistant — local development stack.
+# Brings up postgres, redis, vllm, gateway, worker, voice.
+# Application code lives at the project root (../gateway, ../worker, ...).
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.yml up -d
+#   docker compose -f deploy/docker-compose.yml down
+#
+# Only postgres + redis are required for Task 1. vllm, gateway, worker, and
+# voice are defined so the service graph is complete; their build contexts are
+# wired in later tasks.
+#
+# Networking:
+#   The dev container (agent1_devcontainer-app-1) runs on a separate Docker
+#   network (agent1_devcontainer_default) from these services. To let the dev
+#   container reach postgres/redis by their service names (Docker DNS), an
+#   external network `agent1_shared` is declared here and attached to
+#   postgres + redis. The dev container joins the same network via
+#   `.devcontainer/docker-compose.yml` so `postgres` and `redis` resolve
+#   correctly — no fragile IPs or host.docker.internal lookups needed.
+version: "3.9"
+
+networks:
+  default:
+    # The compose-internal network (gateway/worker talk to each other).
+    driver: bridge
+  shared:
+    # External network shared with the dev container so it can reach
+    # postgres/redis by service name. Created once with:
+    #   docker network create agent1_shared
+    name: agent1_shared
+    external: true
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ticket
+      POSTGRES_PASSWORD: ticket
+      POSTGRES_DB: ticketassistant
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      default: {}
+      shared:
+        # Alias so the dev container (on the `shared` network) can reach
+        # this service by its compose name `postgres` via Docker DNS.
+        aliases:
+          - postgres
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ticket -d ticketassistant" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: [ "redis-server", "--appendonly", "yes" ]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      default: {}
+      shared:
+        aliases:
+          - redis
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    # Qwen 2.5 14B Instruct served through the OpenAI-compatible API.
+    command: [ "--model", "Qwen/Qwen2.5-14B-Instruct", "--port", "8000" ]
+    ports:
+      - "8000:8000"
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    volumes:
+      - vllm_cache:/root/.cache/huggingface
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # GPU passthrough — uncomment when running on a GPU host.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Gateway reads DATABASE_DSN (see gateway/app/config.py).
+      DATABASE_DSN: postgresql://ticket:ticket@postgres:5432/ticketassistant
+      REDIS_URL: redis://redis:6379/0
+      ARQ_REDIS_URL: redis://redis:6379/1
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRES_MINUTES: ${JWT_EXPIRES_MINUTES:-60}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+      VLLM_BASE_URL: http://vllm:8000/v1
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+    environment:
+      # Worker reads DATABASE_DSN (see worker/entrypoint.py).
+      DATABASE_DSN: postgresql://ticket:ticket@postgres:5432/ticketassistant
+      REDIS_URL: redis://redis:6379/0
+      ARQ_REDIS_URL: redis://redis:6379/1
+      VLLM_BASE_URL: http://vllm:8000/v1
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      QWEN_MODEL: ${QWEN_MODEL:-qwen2.5-14b-instruct}
+      MAX_CONVERSATION_TURNS: ${MAX_CONVERSATION_TURNS:-2}
+      # Hermes tools are opt-in. Default "0" = disabled (only the 4 built-in
+      # tools are active). Set to "1" to enable vendored Hermes tools via the
+      # adapter (see docs/hermes-integration-proposal.md).
+      ENABLE_HERMES_TOOLS: ${ENABLE_HERMES_TOOLS:-0}
+
+  voice:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.voice
+    environment:
+      WHISPER_MODEL: base
+      WHISPER_DEVICE: cpu
+      WHISPER_COMPUTE_TYPE: int8
+      KOKORO_VOICE: af_heart
+      TTS_SAMPLE_RATE: "24000"
+    ports:
+      - "8002:8000"
+
+volumes:
+  postgres_data:
+  redis_data:
+  vllm_cache:

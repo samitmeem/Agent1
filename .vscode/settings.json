@@ -1,0 +1,9 @@
+{
+        "agentFoundation.planPath": ".foundation/plan/plan.md",
+        "chat.tools.terminal.autoApprove": {
+                "/^cd /workspaces/Agent1 && python -m pytest observability/tests/ worker/tests/ llm/tests/ gateway/tests/ voice/tests/ -q 2>&1 \\| tail -40$/": {
+                        "approve": true,
+                        "matchCommandLine": true
+                }
+        }
+}
